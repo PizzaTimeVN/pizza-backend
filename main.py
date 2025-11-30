@@ -218,22 +218,109 @@ class SimpleLoginRequest(BaseModel):
 class SimpleLoginResponse(BaseModel):
     success: bool
     username: str
+    user: dict  # ← THÊM field này
+
+class LoginWithStoreRequest(BaseModel):
+    username: str
+    password: str
+    store_id: str
+
+class LoginWithStoreResponse(BaseModel):
+    success: bool
+    username: str
+    user: dict
+    store_id: str
+
+class SimpleLoginResponse(BaseModel):
+    success: bool
+    username: str
+
+# -----------------------------------------------------
+# endpoint mới /api/login
+# ----------------------------------------------------- 
 
 @app.post("/api/login", response_model=SimpleLoginResponse)
-def simple_login(request: SimpleLoginRequest):
+async def simple_login(request: SimpleLoginRequest):
     """
-    Simple login endpoint for App Owner (no date required)
+    Login cho App Xưởng & App Owner (không cần chọn quán)
     """
-    if request.username not in VALID_USERS or VALID_USERS[request.username] != request.password:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password"
+    try:
+        # Query từ Supabase users table
+        response = supabase.table("users").select("*").eq("username", request.username).eq("password", request.password).execute()
+        
+        if not response.data or len(response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Tên đăng nhập hoặc mật khẩu không đúng"
+            )
+        
+        user_data = response.data[0]
+        app_access = user_data.get("app_access", [])
+        
+        # Kiểm tra quyền app_xuong hoặc app_owner
+        if "app_xuong" not in app_access and "app_owner" not in app_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tài khoản này không có quyền truy cập ứng dụng này"
+            )
+        
+        return SimpleLoginResponse(
+            success=True,
+            username=user_data["username"],
+            user={
+                "display_name": user_data["display_name"],
+                "role": user_data["role"],
+                "app_access": user_data["app_access"]
+            }
         )
-    
-    return SimpleLoginResponse(
-        success=True,
-        username=request.username
-    )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi server: {str(e)}")
+
+# -----------------------------------------------------
+# endpoint mới /api/login-store
+# -----------------------------------------------------   
+@app.post("/api/login-store", response_model=LoginWithStoreResponse)
+async def login_with_store(request: LoginWithStoreRequest):
+    """
+    Login cho App Quán - Nhân viên chọn quán để đăng nhập
+    """
+    try:
+        response = supabase.table("users").select("*").eq("username", request.username).eq("password", request.password).execute()
+        
+        if not response.data or len(response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Tên đăng nhập hoặc mật khẩu không đúng"
+            )
+        
+        user_data = response.data[0]
+        app_access = user_data.get("app_access", [])
+        
+        # Kiểm tra quyền app_quan
+        if "app_quan" not in app_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tài khoản này không có quyền truy cập ứng dụng quán"
+            )
+        
+        return LoginWithStoreResponse(
+            success=True,
+            username=user_data["username"],
+            user={
+                "display_name": user_data["display_name"],
+                "role": user_data["role"],
+                "app_access": user_data["app_access"]
+            },
+            store_id=request.store_id
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi server: {str(e)}")
 
 # -----------------------------------------------------
 # INVENTORY ENDPOINTS
