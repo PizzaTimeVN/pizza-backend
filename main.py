@@ -12,6 +12,7 @@ from datetime import date, datetime
 import secrets
 from supabase import create_client, Client
 import os
+import hashlib
 
 # =====================================================
 # CONFIGURATION
@@ -19,10 +20,10 @@ import os
 SUPABASE_URL = "https://tyuufjwutazjfuiawiul.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5dXVmand1dGF6amZ1aWF3aXVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA1MDk4OTIsImV4cCI6MjA3NjA4NTg5Mn0.8WEsb2tBD6akNA9h9tR9zIAqjkZz0xZYVNbYCx2dEbc"
 
-# Valid users
+# Valid users with hashed passwords
 VALID_USERS = {
-    "Bo@Phuc": "Nhim=Khanh",
-    "Nhim@Khanh": "Bo=Phuc"
+    'Bo@Phuc': hashlib.sha256('Nhim=Khanh'.encode()).hexdigest(),
+    'Nhim@Khanh': hashlib.sha256('Bo=Phuc'.encode()).hexdigest()
 }
 
 # Initialize Supabase client
@@ -52,6 +53,10 @@ security = HTTPBasic()
 # =====================================================
 # MODELS
 # =====================================================
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
 class SalesQuery(BaseModel):
     start_date: date
     end_date: date
@@ -97,7 +102,10 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
     username = credentials.username
     password = credentials.password
     
-    if username not in VALID_USERS or VALID_USERS[username] != password:
+    # Hash the password to compare
+    password_hash = hashlib.sha256(password.encode()).hexdigest()
+    
+    if username not in VALID_USERS or VALID_USERS[username] != password_hash:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -144,6 +152,20 @@ def read_root():
 def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+# -----------------------------------------------------
+# LOGIN ENDPOINT
+# -----------------------------------------------------
+@app.post("/api/login")
+async def login(request: LoginRequest):
+    """Login endpoint for frontend authentication"""
+    username = request.username
+    password_hash = hashlib.sha256(request.password.encode()).hexdigest()
+    
+    if username in VALID_USERS and VALID_USERS[username] == password_hash:
+        return {"success": True, "message": "Đăng nhập thành công"}
+    else:
+        raise HTTPException(status_code=401, detail="Sai tài khoản hoặc mật khẩu")
 
 # -----------------------------------------------------
 # SALES ENDPOINTS
@@ -332,9 +354,11 @@ def get_exports(
 # =====================================================
 if __name__ == "__main__":
     import uvicorn
+    import os
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
-        reload=True
+        port=port,
+        reload=False
     )
