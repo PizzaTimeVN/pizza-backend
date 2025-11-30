@@ -20,10 +20,56 @@ import hashlib
 SUPABASE_URL = "https://tyuufjwutazjfuiawiul.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5dXVmand1dGF6amZ1aWF3aXVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA1MDk4OTIsImV4cCI6MjA3NjA4NTg5Mn0.8WEsb2tBD6akNA9h9tR9zIAqjkZz0xZYVNbYCx2dEbc"
 
-# Valid users with hashed passwords
+# Valid users - Owner + Nhân viên
 VALID_USERS = {
+    # Owner
     'Bo@Phuc': hashlib.sha256('Nhim=Khanh'.encode()).hexdigest(),
-    'Nhim@Khanh': hashlib.sha256('Bo=Phuc'.encode()).hexdigest()
+    'Nhim@Khanh': hashlib.sha256('Bo=Phuc'.encode()).hexdigest(),
+    
+    # Nhân viên
+    'Le': hashlib.sha256('xfgMyqK%'.encode()).hexdigest(),
+    'Yen': hashlib.sha256('miOdxPSD'.encode()).hexdigest(),
+    'Kiet': hashlib.sha256('1zOYj6r^'.encode()).hexdigest(),
+    'Tram': hashlib.sha256('JOlqCw5?'.encode()).hexdigest(),
+    'Tien': hashlib.sha256('r8K%uYRh'.encode()).hexdigest(),
+    'Thuy': hashlib.sha256('o8jTq1OR'.encode()).hexdigest(),
+    'Linh': hashlib.sha256('$q8CCR3v'.encode()).hexdigest(),
+    'Nguyen': hashlib.sha256('gxk0zYBq'.encode()).hexdigest(),
+    'Hang': hashlib.sha256('ABcagR#V'.encode()).hexdigest(),
+    'Binh': hashlib.sha256('udLFSqj8'.encode()).hexdigest(),
+    'Phuong': hashlib.sha256('M&wLVngU'.encode()).hexdigest(),
+    'Quyen': hashlib.sha256('CxI32zNU'.encode()).hexdigest(),
+    'Thinh': hashlib.sha256('Oxv#LGij'.encode()).hexdigest(),
+    'Minh': hashlib.sha256('WJ73QA@2'.encode()).hexdigest(),
+    'Van': hashlib.sha256('@QiU&Al0'.encode()).hexdigest(),
+    'Bo': hashlib.sha256('123'.encode()).hexdigest(),
+    'Quanh': hashlib.sha256('T7p!zQ9@Km'.encode()).hexdigest(),
+}
+
+# Thông tin tên đầy đủ của nhân viên
+USER_NAMES = {
+    # Owner
+    'Bo@Phuc': 'Bo (Owner)',
+    'Nhim@Khanh': 'Khanh (Owner)',
+    
+    # Nhân viên
+    'Le': 'Lê',
+    'Yen': 'Yên',
+    'Kiet': 'Kiệt',
+    'Tram': 'Trâm',
+    'Tien': 'Tiền',
+    'Thuy': 'Thủy',
+    'Linh': 'Linh',
+    'Nguyen': 'Nguyên',
+    'Hang': 'Hằng',
+    'Binh': 'Bình',
+    'Phuong': 'Phương',
+    'Quyen': 'Quyên',
+    'Thinh': 'Thịnh',
+    'Minh': 'Minh',
+    'Van': 'Vân',
+    'Bo': 'Bo (NV)',
+    'Quanh': 'Quanh',
 }
 
 # Initialize Supabase client
@@ -163,7 +209,14 @@ async def login(request: LoginRequest):
     password_hash = hashlib.sha256(request.password.encode()).hexdigest()
     
     if username in VALID_USERS and VALID_USERS[username] == password_hash:
-        return {"success": True, "message": "Đăng nhập thành công"}
+        return {
+            "success": True, 
+            "message": "Đăng nhập thành công",
+            "user": {
+                "username": username,
+                "display_name": USER_NAMES.get(username, username)
+            }
+        }
     else:
         raise HTTPException(status_code=401, detail="Sai tài khoản hoặc mật khẩu")
 
