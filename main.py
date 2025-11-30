@@ -21,13 +21,7 @@ SUPABASE_URL = "https://tyuufjwutazjfuiawiul.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5dXVmand1dGF6amZ1aWF3aXVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA1MDk4OTIsImV4cCI6MjA3NjA4NTg5Mn0.8WEsb2tBD6akNA9h9tR9zIAqjkZz0xZYVNbYCx2dEbc"
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1444701214490230895/KE3HDU0Fo8fsEt5yKrMyk83Gy3AIEqfDeOX98k-CWhhhh6awuQY2dAh7WUWn4MDopulc"
 
-# Valid users
-VALID_USERS = {
-    "Bo": "123",
-    "Nhu2k6": "Xinh@Dep",
-    "Ngan2k2": "Dep$Gioi",
-    "admin": "123"
-}
+
 
 # Initialize Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -147,19 +141,30 @@ class ExportResponse(BaseModel):
 # =====================================================
 # AUTHENTICATION
 # =====================================================
-def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
-    """Verify user credentials"""
+async def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
+    """Verify user credentials from Supabase"""
     username = credentials.username
     password = credentials.password
     
-    if username not in VALID_USERS or VALID_USERS[username] != password:
+    try:
+        response = supabase.table("users").select("*").eq("username", username).eq("password", password).execute()
+        
+        if not response.data or len(response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials",
+                headers={"WWW-Authenticate": "Basic"},
+            )
+        
+        return username
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Basic"},
         )
-    return username
-
 # =====================================================
 # UTILITY FUNCTIONS
 # =====================================================
@@ -195,21 +200,38 @@ def health_check():
 # AUTHENTICATION ENDPOINTS
 # -----------------------------------------------------
 @app.post("/api/auth/login", response_model=LoginResponse)
-def login(request: LoginRequest):
+async def login(request: LoginRequest):
     """
     Login endpoint for App Xưởng (requires date field)
     """
-    if request.username not in VALID_USERS or VALID_USERS[request.username] != request.password:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password"
+    try:
+        response = supabase.table("users").select("*").eq("username", request.username).eq("password", request.password).execute()
+        
+        if not response.data or len(response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid username or password"
+            )
+        
+        user_data = response.data[0]
+        app_access = user_data.get("app_access", [])
+        
+        # Kiểm tra quyền app_xuong
+        if "app_xuong" not in app_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tài khoản này không có quyền truy cập app xưởng"
+            )
+        
+        return LoginResponse(
+            success=True,
+            username=request.username,
+            date=str(request.date)
         )
-    
-    return LoginResponse(
-        success=True,
-        username=request.username,
-        date=str(request.date)
-    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 class SimpleLoginRequest(BaseModel):
     username: str
@@ -218,7 +240,7 @@ class SimpleLoginRequest(BaseModel):
 class SimpleLoginResponse(BaseModel):
     success: bool
     username: str
-    user: dict  # ← THÊM field này
+    user: dict
 
 class LoginWithStoreRequest(BaseModel):
     username: str
@@ -230,11 +252,6 @@ class LoginWithStoreResponse(BaseModel):
     username: str
     user: dict
     store_id: str
-
-class SimpleLoginResponse(BaseModel):
-    success: bool
-    username: str
-
 # -----------------------------------------------------
 # endpoint mới /api/login
 # ----------------------------------------------------- 
