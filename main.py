@@ -1,75 +1,32 @@
 """
-Pizza Time Owner - Backend API
-FastAPI + Supabase Backend for Pizza Management System
+Pizza Time Owner - Backend API (Secure Version)
+FastAPI + Supabase Backend with Discord Integration
 """
 
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import date, datetime
 import secrets
 from supabase import create_client, Client
+import httpx
 import os
-import hashlib
 
 # =====================================================
 # CONFIGURATION
 # =====================================================
 SUPABASE_URL = "https://tyuufjwutazjfuiawiul.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5dXVmand1dGF6amZ1aWF3aXVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA1MDk4OTIsImV4cCI6MjA3NjA4NTg5Mn0.8WEsb2tBD6akNA9h9tR9zIAqjkZz0xZYVNbYCx2dEbc"
+DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1444701214490230895/KE3HDU0Fo8fsEt5yKrMyk83Gy3AIEqfDeOX98k-CWhhhh6awuQY2dAh7WUWn4MDopulc"
 
-# Valid users - Owner + Nhân viên
+# Valid users
 VALID_USERS = {
-    # Owner
-    'Bo@Phuc': hashlib.sha256('Nhim=Khanh'.encode()).hexdigest(),
-    'Nhim@Khanh': hashlib.sha256('Bo=Phuc'.encode()).hexdigest(),
-    
-    # Nhân viên
-    'Le': hashlib.sha256('xfgMyqK%'.encode()).hexdigest(),
-    'Yen': hashlib.sha256('miOdxPSD'.encode()).hexdigest(),
-    'Kiet': hashlib.sha256('1zOYj6r^'.encode()).hexdigest(),
-    'Tram': hashlib.sha256('JOlqCw5?'.encode()).hexdigest(),
-    'Tien': hashlib.sha256('r8K%uYRh'.encode()).hexdigest(),
-    'Thuy': hashlib.sha256('o8jTq1OR'.encode()).hexdigest(),
-    'Linh': hashlib.sha256('$q8CCR3v'.encode()).hexdigest(),
-    'Nguyen': hashlib.sha256('gxk0zYBq'.encode()).hexdigest(),
-    'Hang': hashlib.sha256('ABcagR#V'.encode()).hexdigest(),
-    'Binh': hashlib.sha256('udLFSqj8'.encode()).hexdigest(),
-    'Phuong': hashlib.sha256('M&wLVngU'.encode()).hexdigest(),
-    'Quyen': hashlib.sha256('CxI32zNU'.encode()).hexdigest(),
-    'Thinh': hashlib.sha256('Oxv#LGij'.encode()).hexdigest(),
-    'Minh': hashlib.sha256('WJ73QA@2'.encode()).hexdigest(),
-    'Van': hashlib.sha256('@QiU&Al0'.encode()).hexdigest(),
-    'Bo': hashlib.sha256('123'.encode()).hexdigest(),
-    'Quanh': hashlib.sha256('T7p!zQ9@Km'.encode()).hexdigest(),
-}
-
-# Thông tin tên đầy đủ của nhân viên
-USER_NAMES = {
-    # Owner
-    'Bo@Phuc': 'Bo (Owner)',
-    'Nhim@Khanh': 'Khanh (Owner)',
-    
-    # Nhân viên
-    'Le': 'Lê',
-    'Yen': 'Yên',
-    'Kiet': 'Kiệt',
-    'Tram': 'Trâm',
-    'Tien': 'Tiền',
-    'Thuy': 'Thủy',
-    'Linh': 'Linh',
-    'Nguyen': 'Nguyên',
-    'Hang': 'Hằng',
-    'Binh': 'Bình',
-    'Phuong': 'Phương',
-    'Quyen': 'Quyên',
-    'Thinh': 'Thịnh',
-    'Minh': 'Minh',
-    'Van': 'Vân',
-    'Bo': 'Bo (NV)',
-    'Quanh': 'Quanh',
+    "Bo": "123",
+    "Nhu2k6": "Xinh@Dep",
+    "Ngan2k2": "Dep$Gioi",
+    "admin": "123"
 }
 
 # Initialize Supabase client
@@ -81,7 +38,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 app = FastAPI(
     title="Pizza Time Owner API",
     description="Backend API for Pizza Time Management System",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 # CORS middleware
@@ -102,6 +59,53 @@ security = HTTPBasic()
 class LoginRequest(BaseModel):
     username: str
     password: str
+    date: date
+
+class LoginResponse(BaseModel):
+    success: bool
+    username: str
+    date: str
+
+class InventoryItem(BaseModel):
+    item: str
+    quantity: float
+
+class RawMaterialInput(BaseModel):
+    date: date
+    user_name: str
+    items: List[InventoryItem]
+
+class ProductionInput(BaseModel):
+    date: date
+    user_name: str
+    items: List[InventoryItem]
+
+class ExportInput(BaseModel):
+    date: date
+    user_name: str
+    store: str
+    items: List[InventoryItem]
+
+class InventoryUpdate(BaseModel):
+    item: str
+    quantity: float
+
+class OrderItem(BaseModel):
+    name: str
+    currentStock: float
+    orderQty: int
+
+class DiscordOrderRequest(BaseModel):
+    user_name: str
+    orders: List[OrderItem]
+
+class SimpleLoginRequest(BaseModel):
+    username: str
+    password: str
+
+class SimpleLoginResponse(BaseModel):
+    success: bool
+    username: str
 
 class SalesQuery(BaseModel):
     start_date: date
@@ -148,10 +152,7 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
     username = credentials.username
     password = credentials.password
     
-    # Hash the password to compare
-    password_hash = hashlib.sha256(password.encode()).hexdigest()
-    
-    if username not in VALID_USERS or VALID_USERS[username] != password_hash:
+    if username not in VALID_USERS or VALID_USERS[username] != password:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -172,15 +173,6 @@ def get_number_field(item: dict, candidates: List[str]) -> float:
                 continue
     return 0.0
 
-def parse_store_filter(stores: Optional[List[str]]) -> Optional[str]:
-    """Parse store filter for Supabase query"""
-    if not stores or "all" in stores:
-        return None
-    
-    # Create OR filter for multiple stores
-    or_parts = [f"store_id.eq.{store}" for store in stores]
-    return f"or=({','.join(or_parts)})"
-
 # =====================================================
 # API ENDPOINTS
 # =====================================================
@@ -190,7 +182,7 @@ def read_root():
     """Root endpoint"""
     return {
         "message": "Pizza Time Owner API",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "status": "online"
     }
 
@@ -200,28 +192,313 @@ def health_check():
     return {"status": "healthy"}
 
 # -----------------------------------------------------
-# LOGIN ENDPOINT
+# AUTHENTICATION ENDPOINTS
 # -----------------------------------------------------
-@app.post("/api/login")
-async def login(request: LoginRequest):
-    """Login endpoint for frontend authentication"""
-    username = request.username
-    password_hash = hashlib.sha256(request.password.encode()).hexdigest()
+@app.post("/api/auth/login", response_model=LoginResponse)
+def login(request: LoginRequest):
+    """
+    Login endpoint for App Xưởng (requires date field)
+    """
+    if request.username not in VALID_USERS or VALID_USERS[request.username] != request.password:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password"
+        )
     
-    if username in VALID_USERS and VALID_USERS[username] == password_hash:
-        return {
-            "success": True, 
-            "message": "Đăng nhập thành công",
-            "user": {
-                "username": username,
-                "display_name": USER_NAMES.get(username, username)
-            }
-        }
-    else:
-        raise HTTPException(status_code=401, detail="Sai tài khoản hoặc mật khẩu")
+    return LoginResponse(
+        success=True,
+        username=request.username,
+        date=str(request.date)
+    )
+
+class SimpleLoginRequest(BaseModel):
+    username: str
+    password: str
+
+class SimpleLoginResponse(BaseModel):
+    success: bool
+    username: str
+
+@app.post("/api/login", response_model=SimpleLoginResponse)
+def simple_login(request: SimpleLoginRequest):
+    """
+    Simple login endpoint for App Owner (no date required)
+    """
+    if request.username not in VALID_USERS or VALID_USERS[request.username] != request.password:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password"
+        )
+    
+    return SimpleLoginResponse(
+        success=True,
+        username=request.username
+    )
 
 # -----------------------------------------------------
-# SALES ENDPOINTS
+# INVENTORY ENDPOINTS
+# -----------------------------------------------------
+@app.get("/api/inventory")
+def get_inventory(username: str = Depends(verify_credentials)):
+    """
+    Get all inventory items
+    """
+    try:
+        response = supabase.table("inventory").select("*").execute()
+        return {"success": True, "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/inventory/update")
+def update_inventory_item(
+    update: InventoryUpdate,
+    username: str = Depends(verify_credentials)
+):
+    """
+    Update inventory item quantity
+    """
+    try:
+        response = supabase.table("inventory").upsert(
+            {"item": update.item, "quantity": update.quantity},
+            on_conflict="item"
+        ).execute()
+        
+        return {"success": True, "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# -----------------------------------------------------
+# RAW MATERIALS ENDPOINTS
+# -----------------------------------------------------
+@app.post("/api/raw-materials")
+def add_raw_materials(
+    input_data: RawMaterialInput,
+    username: str = Depends(verify_credentials)
+):
+    """
+    Add raw materials input
+    """
+    try:
+        # Insert raw materials records
+        records = []
+        for item in input_data.items:
+            records.append({
+                "date": str(input_data.date),
+                "user_name": input_data.user_name,
+                "item": item.item,
+                "quantity": item.quantity
+            })
+        
+        if records:
+            supabase.table("raw_materials_input").insert(records).execute()
+        
+        # Update inventory
+        for item in input_data.items:
+            # Get current quantity
+            inv_response = supabase.table("inventory").select("quantity").eq("item", item.item).execute()
+            current_qty = inv_response.data[0]["quantity"] if inv_response.data else 0
+            new_qty = current_qty + item.quantity
+            
+            # Update inventory
+            supabase.table("inventory").upsert(
+                {"item": item.item, "quantity": new_qty},
+                on_conflict="item"
+            ).execute()
+        
+        return {"success": True, "message": "Raw materials added successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# -----------------------------------------------------
+# PRODUCTION ENDPOINTS
+# -----------------------------------------------------
+@app.post("/api/production")
+def add_production(
+    input_data: ProductionInput,
+    username: str = Depends(verify_credentials)
+):
+    """
+    Add production records
+    """
+    try:
+        # Insert production records
+        records = []
+        for item in input_data.items:
+            records.append({
+                "date": str(input_data.date),
+                "user_name": input_data.user_name,
+                "item": item.item,
+                "quantity": item.quantity
+            })
+        
+        if records:
+            supabase.table("production").insert(records).execute()
+        
+        # Update inventory
+        for item in input_data.items:
+            inv_response = supabase.table("inventory").select("quantity").eq("item", item.item).execute()
+            current_qty = inv_response.data[0]["quantity"] if inv_response.data else 0
+            new_qty = current_qty + item.quantity
+            
+            supabase.table("inventory").upsert(
+                {"item": item.item, "quantity": new_qty},
+                on_conflict="item"
+            ).execute()
+        
+        return {"success": True, "message": "Production added successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# -----------------------------------------------------
+# EXPORT ENDPOINTS
+# -----------------------------------------------------
+@app.post("/api/exports/create")
+def create_export(
+    input_data: ExportInput,
+    username: str = Depends(verify_credentials)
+):
+    """
+    Create export records
+    """
+    try:
+        # Insert export records
+        records = []
+        for item in input_data.items:
+            records.append({
+                "date": str(input_data.date),
+                "user_name": input_data.user_name,
+                "store": input_data.store,
+                "item": item.item,
+                "quantity": -abs(item.quantity)  # Negative for export
+            })
+        
+        if records:
+            supabase.table("exports").insert(records).execute()
+        
+        # Update inventory (subtract quantities)
+        for item in input_data.items:
+            inv_response = supabase.table("inventory").select("quantity").eq("item", item.item).execute()
+            current_qty = inv_response.data[0]["quantity"] if inv_response.data else 0
+            new_qty = current_qty - abs(item.quantity)
+            
+            supabase.table("inventory").upsert(
+                {"item": item.item, "quantity": new_qty},
+                on_conflict="item"
+            ).execute()
+        
+        return {"success": True, "message": "Export created successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/exports/history")
+def get_export_history(username: str = Depends(verify_credentials)):
+    """
+    Get latest export history
+    """
+    try:
+        # Get latest date
+        latest_response = supabase.table("exports").select("date").order("date", desc=True).limit(1).execute()
+        
+        if not latest_response.data:
+            return {"success": True, "data": [], "date": None}
+        
+        latest_date = latest_response.data[0]["date"]
+        
+        # Get all exports for that date
+        exports_response = supabase.table("exports").select("*").eq("date", latest_date).order("created_at", desc=True).execute()
+        
+        return {
+            "success": True,
+            "data": exports_response.data,
+            "date": latest_date
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# -----------------------------------------------------
+# DISCORD INTEGRATION
+# -----------------------------------------------------
+@app.post("/api/discord/send-order")
+async def send_order_to_discord(
+    request: DiscordOrderRequest,
+    username: str = Depends(verify_credentials)
+):
+    """
+    Send order to Discord webhook
+    """
+    try:
+        # Create order message
+        now = datetime.now()
+        date_str = now.strftime("%d/%m/%Y")
+        time_str = now.strftime("%H:%M:%S")
+        
+        message = f"🍕 **ĐƠN ĐẶT HÀNG - PIZZA TIME**\n\n"
+        message += f"📅 **Ngày:** {date_str} - {time_str}\n"
+        message += f"👤 **Người đặt:** {request.user_name}\n"
+        message += f"📦 **Số mặt hàng:** {len(request.orders)}\n\n"
+        message += f"**CHI TIẾT ĐƠN HÀNG:**\n"
+        message += f"{'=' * 50}\n"
+        
+        for idx, order in enumerate(request.orders, 1):
+            message += f"{idx}. **{order.name}**\n"
+            message += f"   └ Tồn kho hiện tại: {order.currentStock}\n"
+            message += f"   └ Số lượng đặt: **{order.orderQty}**\n\n"
+        
+        message += f"{'=' * 50}\n"
+        message += f"⚠️ *Vui lòng xác nhận và xử lý đơn hàng này!*"
+        
+        # Send to Discord
+        async with httpx.AsyncClient() as client:
+            discord_response = await client.post(
+                DISCORD_WEBHOOK_URL,
+                json={
+                    "content": message,
+                    "username": "Pizza Time Bot",
+                    "avatar_url": "https://em-content.zobj.net/thumbs/120/apple/354/pizza_1f355.png"
+                }
+            )
+        
+        if discord_response.status_code not in [200, 204]:
+            raise HTTPException(status_code=500, detail="Failed to send Discord message")
+        
+        # Save order to database
+        order_data = {
+            "date": now.strftime("%Y-%m-%d"),
+            "time": time_str,
+            "user_name": request.user_name,
+            "items": [order.dict() for order in request.orders],
+            "total_items": len(request.orders)
+        }
+        
+        supabase.table("orders").insert([order_data]).execute()
+        
+        return {"success": True, "message": "Order sent to Discord successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# -----------------------------------------------------
+# STORE INVENTORY ENDPOINTS
+# -----------------------------------------------------
+@app.get("/api/store-inventory/{store_id}")
+def get_store_inventory(
+    store_id: str,
+    username: str = Depends(verify_credentials)
+):
+    """
+    Get inventory for a specific store
+    """
+    try:
+        response = supabase.table("ton_quan").select("inventory, date, created_at").eq("store_id", store_id).order("created_at", desc=True).limit(1).execute()
+        
+        if not response.data:
+            return {"success": True, "data": None, "message": "No data found"}
+        
+        return {"success": True, "data": response.data[0]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# -----------------------------------------------------
+# SALES ENDPOINTS (From original code)
 # -----------------------------------------------------
 @app.post("/api/sales", response_model=SalesResponse)
 def get_sales(
@@ -232,17 +509,13 @@ def get_sales(
     Get sales data with filters
     """
     try:
-        # Build query
         q = supabase.table("sale_quan").select("*")
         q = q.gte("date", str(query.start_date))
         q = q.lte("date", str(query.end_date))
         
-        # Apply store filter
         if query.stores and "all" not in query.stores:
-            # Filter by specific stores
             q = q.in_("store_id", query.stores)
         
-        # Execute query
         response = q.execute()
         data = response.data
         
@@ -251,7 +524,6 @@ def get_sales(
                 cash=0, transfer=0, grab=0, shopee=0, total=0, data=[]
             )
         
-        # Calculate totals
         totals = {
             "cash": 0.0,
             "transfer": 0.0,
@@ -278,7 +550,6 @@ def get_stores(username: str = Depends(verify_credentials)):
     try:
         response = supabase.table("sale_quan").select("store_id, username").execute()
         
-        # Remove duplicates
         stores = {}
         for item in response.data:
             store_id = item.get("store_id")
@@ -290,9 +561,6 @@ def get_stores(username: str = Depends(verify_credentials)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# -----------------------------------------------------
-# QUANTITY ENDPOINTS
-# -----------------------------------------------------
 @app.post("/api/quantity", response_model=QuantityResponse)
 def get_quantity(
     query: QuantityQuery,
@@ -302,16 +570,13 @@ def get_quantity(
     Get quantity data with filters
     """
     try:
-        # Build query
         q = supabase.table("pizza_sales").select("*")
         q = q.gte("date", str(query.start_date))
         q = q.lte("date", str(query.end_date))
         
-        # Apply store filter
         if query.store:
             q = q.eq("store", query.store)
         
-        # Execute query
         response = q.execute()
         data = response.data
         
@@ -324,7 +589,6 @@ def get_quantity(
                 data=[]
             )
         
-        # Calculate totals
         total_quantity = sum(int(item.get("quantity", 0)) for item in data)
         total_orders = len(data)
         categories = set(item.get("category", "Khác") for item in data)
@@ -341,9 +605,6 @@ def get_quantity(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# -----------------------------------------------------
-# EXPORT ENDPOINTS
-# -----------------------------------------------------
 @app.post("/api/exports", response_model=ExportResponse)
 def get_exports(
     query: ExportQuery,
@@ -353,17 +614,14 @@ def get_exports(
     Get export data with filters
     """
     try:
-        # Build query
         q = supabase.table("exports").select("*")
         q = q.gte("date", str(query.start_date))
         q = q.lte("date", str(query.end_date))
         q = q.order("created_at", desc=True)
         
-        # Apply store filter
         if query.stores and "all" not in query.stores:
             q = q.in_("store", query.stores)
         
-        # Execute query
         response = q.execute()
         raw_data = response.data
         
@@ -376,7 +634,6 @@ def get_exports(
                 data=[]
             )
         
-        # Group by date + store + item, keep only latest
         grouped = {}
         for item in raw_data:
             key = f"{item['date']}|{item['store']}|{item['item']}"
@@ -385,7 +642,6 @@ def get_exports(
         
         data = list(grouped.values())
         
-        # Calculate totals
         total_quantity = sum(abs(float(item.get("quantity", 0))) for item in data)
         total_orders = len(data)
         stores = set(item.get("store") for item in data)
@@ -407,11 +663,9 @@ def get_exports(
 # =====================================================
 if __name__ == "__main__":
     import uvicorn
-    import os
-    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=port,
-        reload=False
+        port=8000,
+        reload=True
     )
