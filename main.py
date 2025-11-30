@@ -295,6 +295,50 @@ async def simple_login(request: SimpleLoginRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi server: {str(e)}")
+# -----------------------------------------------------
+# endpoint mới /api/login-owner
+# -----------------------------------------------------   
+# Thêm đoạn code này vào file backend (main.py), sau endpoint /api/login-store
+
+@app.post("/api/login-owner", response_model=SimpleLoginResponse)
+async def login_owner(request: SimpleLoginRequest):
+    """
+    Login riêng cho App Owner - Chỉ owner/admin mới truy cập được
+    """
+    try:
+        # Query từ Supabase users table
+        response = supabase.table("users").select("*").eq("username", request.username).eq("password", request.password).execute()
+        
+        if not response.data or len(response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Tên đăng nhập hoặc mật khẩu không đúng"
+            )
+        
+        user_data = response.data[0]
+        app_access = user_data.get("app_access", [])
+        
+        # ✅ Kiểm tra quyền: Phải có app_owner HOẶC là admin
+        if "app_owner" not in app_access and user_data.get("role") != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tài khoản này không có quyền truy cập App Owner"
+            )
+        
+        return SimpleLoginResponse(
+            success=True,
+            username=user_data["username"],
+            user={
+                "display_name": user_data["display_name"],
+                "role": user_data["role"],
+                "app_access": user_data["app_access"]
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi server: {str(e)}")
 
 # -----------------------------------------------------
 # endpoint mới /api/login-store
