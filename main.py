@@ -569,28 +569,54 @@ def create_export(
     username: str = Depends(verify_credentials)
 ):
     """
-    Create export records
+    Create export records - accumulates quantities for same items
     """
     try:
-        # Insert export records
-        records = []
-        for item in input_data.items:
-            records.append({
-                "date": str(input_data.date),
-                "user_name": input_data.user_name,
-                "store": input_data.store,
-                "item": item.item,
-                "quantity": -abs(item.quantity)  # Negative for export
-            })
+        # Lấy các bản ghi xuất hiện có trong ngày
+        existing_exports = supabase.table("exports")\
+            .select("*")\
+            .eq("date", str(input_data.date))\
+            .eq("user_name", input_data.user_name)\
+            .eq("store", input_data.store)\
+            .execute()
         
-        if records:
-            supabase.table("exports").insert(records).execute()
+        # Tạo dict để tra cứu nhanh các item đã tồn tại
+        existing_items = {
+            record["item"]: record 
+            for record in existing_exports.data
+        }
         
-        # Update inventory (subtract quantities)
+        # Xử lý từng item
         for item in input_data.items:
-            inv_response = supabase.table("inventory").select("quantity").eq("item", item.item).execute()
+            qty = abs(item.quantity)
+            
+            if item.item in existing_items:
+                # Nếu item đã tồn tại, cộng dồn số lượng
+                existing_record = existing_items[item.item]
+                new_quantity = existing_record["quantity"] - qty  # quantity đã là âm
+                
+                supabase.table("exports")\
+                    .update({"quantity": new_quantity})\
+                    .eq("id", existing_record["id"])\
+                    .execute()
+            else:
+                # Nếu item chưa tồn tại, tạo mới
+                supabase.table("exports").insert({
+                    "date": str(input_data.date),
+                    "user_name": input_data.user_name,
+                    "store": input_data.store,
+                    "item": item.item,
+                    "quantity": -qty  # Negative for export
+                }).execute()
+            
+            # Update inventory (subtract quantities)
+            inv_response = supabase.table("inventory")\
+                .select("quantity")\
+                .eq("item", item.item)\
+                .execute()
+            
             current_qty = inv_response.data[0]["quantity"] if inv_response.data else 0
-            new_qty = current_qty - abs(item.quantity)
+            new_qty = current_qty - qty
             
             supabase.table("inventory").upsert(
                 {"item": item.item, "quantity": new_qty},
@@ -604,11 +630,15 @@ def create_export(
 @app.get("/api/exports/history")
 def get_export_history(username: str = Depends(verify_credentials)):
     """
-    Get latest export history
+    Get latest export history with accumulated quantities
     """
     try:
         # Get latest date
-        latest_response = supabase.table("exports").select("date").order("date", desc=True).limit(1).execute()
+        latest_response = supabase.table("exports")\
+            .select("date")\
+            .order("date", desc=True)\
+            .limit(1)\
+            .execute()
         
         if not latest_response.data:
             return {"success": True, "data": [], "date": None}
@@ -616,7 +646,11 @@ def get_export_history(username: str = Depends(verify_credentials)):
         latest_date = latest_response.data[0]["date"]
         
         # Get all exports for that date
-        exports_response = supabase.table("exports").select("*").eq("date", latest_date).order("created_at", desc=True).execute()
+        exports_response = supabase.table("exports")\
+            .select("*")\
+            .eq("date", latest_date)\
+            .order("created_at", desc=True)\
+            .execute()
         
         return {
             "success": True,
@@ -625,7 +659,6 @@ def get_export_history(username: str = Depends(verify_credentials)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 # -----------------------------------------------------
 # DISCORD INTEGRATION
 # -----------------------------------------------------
@@ -1298,3 +1331,4 @@ if __name__ == "__main__":
         port=8000,
         reload=True
     )
+
