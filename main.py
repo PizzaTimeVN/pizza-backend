@@ -569,15 +569,13 @@ def create_export(
     username: str = Depends(verify_credentials)
 ):
     """
-    Create export records - accumulates quantities for same items
+    Create export records - accumulates quantities for same items across all users
     """
     try:
-        # Lấy các bản ghi xuất hiện có trong ngày
+        # Lấy các bản ghi xuất hiện có trong ngày (không quan tâm user_name và store)
         existing_exports = supabase.table("exports")\
             .select("*")\
             .eq("date", str(input_data.date))\
-            .eq("user_name", input_data.user_name)\
-            .eq("store", input_data.store)\
             .execute()
         
         # Tạo dict để tra cứu nhanh các item đã tồn tại
@@ -658,8 +656,7 @@ def get_export_history(username: str = Depends(verify_credentials)):
             "date": latest_date
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-# -----------------------------------------------------
+        raise HTTPException(status_code=500, detail=str(e))# -----------------------------------------------------
 # DISCORD INTEGRATION
 # -----------------------------------------------------
 @app.post("/api/discord/send-order")
@@ -1331,4 +1328,5 @@ if __name__ == "__main__":
         port=8000,
         reload=True
     )
+
 
